@@ -1,6 +1,9 @@
+// main.rs
+use std::fs::File;
 use clap::Parser;
 use futures::StreamExt;
 use tokio::sync::mpsc;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 mod crawler;
 mod search; // New module for search functionality
@@ -28,6 +31,10 @@ struct Args {
     /// Maximum number of search results to retrieve
     #[arg(long, default_value_t = 10)]
     search_limit: u32,
+
+    /// If given, output links will be output to given file
+    #[arg(long)]
+    output_path: Option<String>
 }
 
 #[tokio::main]
@@ -47,15 +54,13 @@ async fn main() {
                 .filter(|line| !line.is_empty()),
         );
     }
-
     // Check if there are any starting points
     if initial_urls.is_empty() && args.search_site.is_none() {
         println!("No initial URLs provided. Use --url, --input-file, or --search-site to specify starting URLs.");
         return;
     }
-
     // Define the filter function based on the filter pattern
-    let filter_pattern = args.filter_pattern;
+    let filter_pattern = args.filter_pattern.clone();
     let filter = move |url: &String| url.contains(&filter_pattern);
 
     // Create a channel for dynamically added URLs
@@ -75,19 +80,40 @@ async fn main() {
             }
         });
     }
-
     // Send initial URLs into the sender
     for url in initial_urls {
         url_sender
             .send(url)
             .unwrap_or_else(|err| eprintln!("Error sending initial URL: {}", err));
     }
+    // Open the output file if specified
+    let mut output_file: Option<BufWriter<tokio::fs::File>> = match &args.output_path {
+        None => None,
+        Some(path) => {
+            match tokio::fs::File::create(path).await {
+                Ok(f) => Some(BufWriter::new(f)),
+                Err(err) => {
+                    eprintln!("Error creating output file: {}", err);
+                    return;
+                }
+            }
+        }
+    };
 
     // Start crawling and get the stream of URLs
     let mut stream = crawler::crawl_urls(url_receiver, filter);
 
     // Process the stream of URLs
     while let Some(url) = stream.next().await {
-        println!("{}", url);
+        if let Some(writer) = &mut output_file {
+            writer.write_all(url.as_bytes()).await.unwrap();
+            writer.write_all(b"\n").await.unwrap();
+        } else {
+            println!("{}", url);
+        }
+    }
+    // Flush the output file if necessary
+    if let Some(writer) = &mut output_file {
+        writer.flush().await.unwrap();
     }
 }
