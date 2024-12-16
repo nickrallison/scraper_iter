@@ -27,16 +27,19 @@ where
     F: Fn(&String) -> bool + Send + Sync + 'static,
 {
     let filter = Arc::new(filter);
+    let crawled_urls = Arc::new(tokio::sync::Mutex::new(HashSet::new())); // Shared set of visited URLs
+
     Box::pin(stream! {
-        let mut visited = HashSet::new();
         let mut to_crawl = FuturesUnordered::new();
 
         loop {
             tokio::select! {
                 // Receive new URLs to crawl
                 Some(url) = url_receiver.recv() => {
+                    let mut visited = crawled_urls.lock().await;
                     if !visited.contains(&url) {
                         visited.insert(url.clone());
+                        drop(visited); // Release the lock before awaiting
                         // Start fetching the URL
                         to_crawl.push(fetch_url(url));
                     }
@@ -50,10 +53,13 @@ where
                     if !filter(&url) {
                         continue;
                     }
+
                     // Schedule the child URLs to be crawled
                     for child_url in child_urls {
+                        let mut visited = crawled_urls.lock().await;
                         if !visited.contains(&child_url) {
                             visited.insert(child_url.clone());
+                            drop(visited); // Release the lock before awaiting
                             to_crawl.push(fetch_url(child_url));
                         }
                     }
@@ -85,6 +91,7 @@ async fn fetch_url(url: String) -> (String, Vec<String>) {
         },
         Err(_) => return (url, vec![]),
     };
+
     // Parse the content to find child links
     let document = Html::parse_document(&body);
     let selector = Selector::parse("a[href]").unwrap();
