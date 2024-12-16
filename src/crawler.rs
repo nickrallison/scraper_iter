@@ -1,7 +1,8 @@
+// src/crawler.rs
+
 use async_stream::stream;
 use futures::stream::FuturesUnordered;
-use futures::Stream;
-use futures::StreamExt;
+use futures::{Stream, StreamExt};
 use reqwest;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
@@ -40,6 +41,7 @@ where
                     if !visited.contains(&url) {
                         visited.insert(url.clone());
                         drop(visited); // Release the lock before awaiting
+
                         // Start fetching the URL
                         to_crawl.push(fetch_url(url));
                     }
@@ -96,12 +98,14 @@ async fn fetch_url(url: String) -> (String, Vec<String>) {
     let document = Html::parse_document(&body);
     let selector = Selector::parse("a[href]").unwrap();
     let mut child_urls = Vec::new();
+
     for element in document.select(&selector) {
         if let Some(href) = element.value().attr("href") {
             let child_url = resolve_url(href, &url);
             child_urls.push(child_url);
         }
     }
+
     (url, child_urls)
 }
 

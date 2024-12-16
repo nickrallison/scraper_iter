@@ -1,4 +1,6 @@
-use reqwest::{Client, Url};
+// src/search.rs
+
+use reqwest::{Client};
 use scraper::{Html, Selector};
 use tokio::sync::mpsc::UnboundedSender;
 use urlencoding::encode;
@@ -40,16 +42,21 @@ pub async fn search_site_urls(
         let document = Html::parse_document(&body);
         let selector = Selector::parse("a").unwrap();
         let links = document.select(&selector);
-        let links: Vec<_> = links.map(|link| link.attr("href")).filter(|opt| opt.is_some()).map(|opt| opt.unwrap()).collect();
-        let pattern = Regex::new(r"\/url\?q=(.*?)&sa=").unwrap();
+        let links: Vec<_> = links
+            .map(|link| link.value().attr("href"))
+            .filter_map(|opt| opt)
+            .collect();
+        let pattern = Regex::new(r"/url\?q=(.*?)&sa=").unwrap();
         let mut found_urls = Vec::new();
+
         for link in links {
-            let url = pattern.captures(&link).and_then(|caps| caps.get(1).map(|m| m.as_str()));
-            if let Some(url) = url {
-                found_urls.push(url.to_string());
+            if let Some(caps) = pattern.captures(&link) {
+                if let Some(url_match) = caps.get(1) {
+                    let url = url_match.as_str();
+                    found_urls.push(url.to_string());
+                }
             }
         }
-
 
         if found_urls.is_empty() {
             // No more results
