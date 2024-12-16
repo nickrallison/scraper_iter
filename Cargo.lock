@@ -1366,20 +1366,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "scraper_iter"
-version = "0.1.0"
-dependencies = [
- "async-stream",
- "clap",
- "futures",
- "regex",
- "reqwest",
- "scraper",
- "tokio",
- "urlencoding",
-]
-
-[[package]]
 name = "security-framework"
 version = "2.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1904,6 +1890,20 @@ checksum = "04dd7223427d52553d3702c004d3b2fe07c148165faa56313cb00211e31c12bc"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "web_crawler"
+version = "0.1.0"
+dependencies = [
+ "async-stream",
+ "clap",
+ "futures",
+ "regex",
+ "reqwest",
+ "scraper",
+ "tokio",
+ "urlencoding",
 ]
 
 [[package]]
