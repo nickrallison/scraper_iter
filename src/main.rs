@@ -20,9 +20,9 @@ struct Args {
     #[arg(short, long)]
     input_file: Option<String>,
 
-    /// Filter pattern to decide whether to proceed with a URL's children
-    #[arg(short, long, default_value = "")]
-    filter_pattern: String,
+    /// Filter pattern to decide whether to proceed with a URL's children, eahc pattern is ORed together
+    #[arg(short, long)]
+    filter_pattern: Vec<String>,
 
     /// Site to perform site search and add URLs from
     #[arg(long)]
@@ -64,8 +64,11 @@ async fn main() {
         return;
     }
     // Define the filter function based on the filter pattern
-    let filter_pattern = args.filter_pattern.clone();
-    let filter = move |url: &String| url.contains(&filter_pattern);
+    let filter_patterns: Vec<String> = args.filter_pattern.clone();
+
+    let filter = move |url: &String| {
+        filter_patterns.iter().any(|pattern| url.contains(pattern))
+    };
 
     // Create a channel for dynamically added URLs
     let (url_sender, url_receiver) = mpsc::unbounded_channel::<String>();
