@@ -20,7 +20,7 @@ struct Args {
     #[arg(short, long)]
     input_file: Option<String>,
 
-    /// Filter pattern to decide whether to proceed with a URL's children, eahc pattern is ORed together
+    /// Filter pattern to decide whether to proceed with a URL's children, each pattern is ORed together
     #[arg(short, long)]
     filter_pattern: Vec<String>,
 
