@@ -202,6 +202,10 @@ async fn is_valid_url(url: &str) -> bool {
 pub(crate) async fn wget(url: &str) -> Result<(), Box<dyn std::error::Error>> {
     use tokio::process::Command;
 
+    if !is_valid_url(url).await {
+        return Err("Invalid URL".into());
+    }
+
     // Initialize the Command with 'wget'
     let mut cmd = Command::new("wget");
 
