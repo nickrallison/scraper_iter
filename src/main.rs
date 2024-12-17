@@ -34,7 +34,11 @@ struct Args {
 
     /// If given, output links will be output to given file
     #[arg(long)]
-    output_path: Option<String>
+    output_path: Option<String>,
+
+    /// If given the found links will be downloaded with wget
+    #[arg(long)]
+    wget: bool
 }
 
 #[tokio::main]
@@ -105,6 +109,16 @@ async fn main() {
 
     // Process the stream of URLs
     while let Some(url) = stream.next().await {
+        // wgetting
+        if args.wget {
+            tokio::spawn(async move {
+                if let Err(err) = crawler::wget(&url).await {
+                    eprintln!("Error wgetting: {}", err);
+                }
+            });
+        }
+
+        // file writing
         if let Some(writer) = &mut output_file {
             writer.write_all(url.as_bytes()).await.unwrap();
             writer.write_all(b"\n").await.unwrap();

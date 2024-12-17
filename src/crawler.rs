@@ -7,6 +7,7 @@ use reqwest;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::sync::Arc;
+use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedReceiver;
 
 /// Crawls URLs provided via a receiver and returns an asynchronous stream of found URLs.
@@ -127,4 +128,29 @@ fn resolve_url(href: &str, base_url: &str) -> String {
         },
         Err(_) => href.to_string(),
     }
+}
+
+
+/// Wgets file asynchronously
+///
+/// # Arguments
+///
+/// * `url` - The link to fetch
+///
+/// # Returns
+///
+/// Result<(), Box<dyn std::error::Error>>
+pub(crate) async fn wget(url: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // use wget --no-check-certificate -erobots=off {url}
+    let mut cmd = Command::new("wget");
+    cmd.arg("--no-check-certificate");
+    cmd.arg("-erobots=off");
+    cmd.arg(url);
+    let output = cmd.output().await?;
+    if !output.status.success() {
+        println!("wget failed with status: {}", output.status);
+        println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
+        return Err("wget failed".into());
+    }
+    Ok(())
 }
