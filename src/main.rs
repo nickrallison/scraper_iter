@@ -109,10 +109,13 @@ async fn main() {
 
     // Process the stream of URLs
     while let Some(url) = stream.next().await {
+        // Clone the URL for the async task
+        let url_for_task = url.clone();
+
         // wgetting
         if args.wget {
             tokio::spawn(async move {
-                if let Err(err) = crawler::wget(&url).await {
+                if let Err(err) = crawler::wget(&url_for_task).await {
                     eprintln!("Error wgetting: {}", err);
                 }
             });
@@ -123,7 +126,7 @@ async fn main() {
             writer.write_all(url.as_bytes()).await.unwrap();
             writer.write_all(b"\n").await.unwrap();
         } else {
-            println!("{}", url);
+            println!("{}", &url);
         }
     }
     // Flush the output file if necessary

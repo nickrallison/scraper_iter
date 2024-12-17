@@ -121,12 +121,29 @@ async fn fetch_url(url: String) -> (String, Vec<String>) {
 ///
 /// An absolute URL as a String.
 fn resolve_url(href: &str, base_url: &str) -> String {
-    match reqwest::Url::parse(base_url) {
-        Ok(base) => match base.join(href) {
+    let base = match reqwest::Url::parse(base_url) {
+        Ok(url) => url,
+        Err(_) => return href.to_string(),
+    };
+
+    // If the base URL path doesn't end with '/', and it doesn't seem to be a file, add '/'
+    let base_path = base.path();
+    let path_segments: Vec<&str> = base_path.split('/').collect();
+    let last_segment = path_segments.last().unwrap_or(&"");
+    if !last_segment.contains('.') && !base_path.ends_with('/') {
+        // Clone the base URL and set the corrected path
+        let mut adjusted_base = base.clone();
+        adjusted_base.set_path(&format!("{}/", base_path));
+        match adjusted_base.join(href) {
             Ok(url) => url.to_string(),
             Err(_) => href.to_string(),
-        },
-        Err(_) => href.to_string(),
+        }
+    } else {
+        // Base URL ends with a file or '/', proceed as is
+        match base.join(href) {
+            Ok(url) => url.to_string(),
+            Err(_) => href.to_string(),
+        }
     }
 }
 
@@ -141,16 +158,30 @@ fn resolve_url(href: &str, base_url: &str) -> String {
 ///
 /// Result<(), Box<dyn std::error::Error>>
 pub(crate) async fn wget(url: &str) -> Result<(), Box<dyn std::error::Error>> {
-    // use wget --no-check-certificate -erobots=off {url}
+    use tokio::process::Command;
+
+    // Initialize the Command with 'wget'
     let mut cmd = Command::new("wget");
+
+    // Adding necessary arguments to wget
     cmd.arg("--no-check-certificate");
     cmd.arg("-erobots=off");
+
+    // Use -r to recursively save files
+    cmd.arg("-r");
+
+    // Add the URL as the last argument
     cmd.arg(url);
+
+    // Execute the command and await its completion
     let output = cmd.output().await?;
+
+    // Check if the wget command was successful
     if !output.status.success() {
         println!("wget failed with status: {}", output.status);
         println!("stderr: {}", String::from_utf8_lossy(&output.stderr));
         return Err("wget failed".into());
     }
+
     Ok(())
 }
