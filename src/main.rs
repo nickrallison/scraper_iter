@@ -1,9 +1,14 @@
+// main.rs
+use std::fs::File;
 use clap::Parser;
 use futures::StreamExt;
+use tokio::sync::mpsc;
+use tokio::io::{AsyncWriteExt, BufWriter};
 
 mod crawler;
+mod search; // New module for search functionality
 
-/// Simple web crawler to find URLs starting from initial links.
+/// Simple web crawler to find URLs starting from initial links or search results.
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
@@ -18,6 +23,18 @@ struct Args {
     /// Filter pattern to decide whether to proceed with a URL's children
     #[arg(short, long, default_value = "")]
     filter_pattern: String,
+
+    /// Site to perform site search and add URLs from
+    #[arg(long)]
+    search_site: Option<String>,
+
+    /// Maximum number of search results to retrieve
+    #[arg(long, default_value_t = 10)]
+    search_limit: u32,
+
+    /// If given, output links will be output to given file
+    #[arg(long)]
+    output_path: Option<String>
 }
 
 #[tokio::main]
@@ -37,21 +54,66 @@ async fn main() {
                 .filter(|line| !line.is_empty()),
         );
     }
-
-    if initial_urls.is_empty() {
-        println!("No initial URLs provided. Use --url or --input-file to specify starting URLs.");
+    // Check if there are any starting points
+    if initial_urls.is_empty() && args.search_site.is_none() {
+        println!("No initial URLs provided. Use --url, --input-file, or --search-site to specify starting URLs.");
         return;
     }
-
     // Define the filter function based on the filter pattern
-    let filter_pattern = args.filter_pattern;
+    let filter_pattern = args.filter_pattern.clone();
     let filter = move |url: &String| url.contains(&filter_pattern);
 
+    // Create a channel for dynamically added URLs
+    let (url_sender, url_receiver) = mpsc::unbounded_channel::<String>();
+
+    // If search_site is specified, start the search task
+    if let Some(search_site) = args.search_site.clone() {
+        // Clone the sender to move into the async task
+        let sender_clone = url_sender.clone();
+        let search_limit = args.search_limit;
+        tokio::spawn(async move {
+            // Perform the site-specific search
+            if let Err(err) =
+                search::search_site_urls(&search_site, search_limit, sender_clone).await
+            {
+                eprintln!("Error during site search: {}", err);
+            }
+        });
+    }
+    // Send initial URLs into the sender
+    for url in initial_urls {
+        url_sender
+            .send(url)
+            .unwrap_or_else(|err| eprintln!("Error sending initial URL: {}", err));
+    }
+    // Open the output file if specified
+    let mut output_file: Option<BufWriter<tokio::fs::File>> = match &args.output_path {
+        None => None,
+        Some(path) => {
+            match tokio::fs::File::create(path).await {
+                Ok(f) => Some(BufWriter::new(f)),
+                Err(err) => {
+                    eprintln!("Error creating output file: {}", err);
+                    return;
+                }
+            }
+        }
+    };
+
     // Start crawling and get the stream of URLs
-    let mut stream = crawler::crawl_urls(initial_urls, filter);
+    let mut stream = crawler::crawl_urls(url_receiver, filter);
 
     // Process the stream of URLs
     while let Some(url) = stream.next().await {
-        println!("{}", url);
+        if let Some(writer) = &mut output_file {
+            writer.write_all(url.as_bytes()).await.unwrap();
+            writer.write_all(b"\n").await.unwrap();
+        } else {
+            println!("{}", url);
+        }
+    }
+    // Flush the output file if necessary
+    if let Some(writer) = &mut output_file {
+        writer.flush().await.unwrap();
     }
 }
