@@ -7,6 +7,7 @@ use reqwest;
 use scraper::{Html, Selector};
 use std::collections::HashSet;
 use std::sync::Arc;
+use reqwest::Url;
 use tokio::process::Command;
 use tokio::sync::mpsc::UnboundedReceiver;
 
@@ -86,6 +87,7 @@ where
 ///
 /// A tuple containing the original URL and a vector of child URLs found on the page.
 async fn fetch_url(url: String) -> (String, Vec<String>) {
+
     // Attempt to fetch the URL content
     let body = match reqwest::get(&url).await {
         Ok(resp) => match resp.text().await {
@@ -102,15 +104,28 @@ async fn fetch_url(url: String) -> (String, Vec<String>) {
 
     for element in document.select(&selector) {
         if let Some(href) = element.value().attr("href") {
-            let child_url = resolve_url(href, &url);
+            let child_url = resolve_url(href, &url).await;
+            let other_url = url.clone();
+            let mut other_url = Url::parse(&other_url).expect("URL should be valid");
+            {
+                let mut segs = other_url.path_segments_mut().unwrap();
+                segs.pop();
+            }
+            let other_child = resolve_url(href, other_url.as_str()).await;
+
             child_urls.push(child_url);
+            child_urls.push(other_child);
         }
     }
 
     (url, child_urls)
 }
 
-/// Resolves relative URLs to absolute URLs based on the base URL.
+/// Resolves relative URLs to absolute URLs based on the base URL
+/// and checks if it is valid at runtime.
+///
+/// If the URL is not valid, it will attempt to resolve by trimming
+/// the last part of the `base_url`.
 ///
 /// # Arguments
 ///
@@ -120,30 +135,57 @@ async fn fetch_url(url: String) -> (String, Vec<String>) {
 /// # Returns
 ///
 /// An absolute URL as a String.
-fn resolve_url(href: &str, base_url: &str) -> String {
-    let base = match reqwest::Url::parse(base_url) {
-        Ok(url) => url,
-        Err(_) => return href.to_string(),
+async fn resolve_url(href: &str, base_url: &str) -> String {
+    // Attempt to parse the base URL and join with the href
+    let mut resolved_url = match Url::parse(base_url).and_then(|base| base.join(href)) {
+        Ok(url) => url.to_string(),
+        Err(_) => return href.to_string(), // Return href if parsing fails altogether
     };
 
-    // If the base URL path doesn't end with '/', and it doesn't seem to be a file, add '/'
-    let base_path = base.path();
-    let path_segments: Vec<&str> = base_path.split('/').collect();
-    let last_segment = path_segments.last().unwrap_or(&"");
-    if !last_segment.contains('.') && !base_path.ends_with('/') {
-        // Clone the base URL and set the corrected path
-        let mut adjusted_base = base.clone();
-        adjusted_base.set_path(&format!("{}/", base_path));
-        match adjusted_base.join(href) {
-            Ok(url) => url.to_string(),
-            Err(_) => href.to_string(),
-        }
-    } else {
-        // Base URL ends with a file or '/', proceed as is
-        match base.join(href) {
-            Ok(url) => url.to_string(),
-            Err(_) => href.to_string(),
-        }
+    return resolved_url;
+
+    // Check if the resolved URL is valid
+    // if is_valid_url(&resolved_url).await {
+    //     return resolved_url;
+    // }
+    //
+    // let mut url = match Url::parse(&resolved_url) {
+    //     Ok(url) => url,
+    //     Err(_) => return href.to_string(), // Return href if re-parsing fails
+    // };
+    //
+    // {
+    //     // One level popped
+    //     let segments = url.path_segments_mut();
+    //     if let Ok(mut segments) = segments {
+    //         segments.pop();
+    //     }
+    // }
+    //
+    //
+    // resolved_url = url.to_string();
+    // if is_valid_url(&resolved_url).await {
+    //     return resolved_url;
+    // }
+    //
+    //
+    // href.to_string() // If no valid resolution found, return the original href
+}
+
+/// Checks if a URL is valid by performing a HEAD request.
+///
+/// # Arguments
+///
+/// * `url` - The URL to check.
+///
+/// # Returns
+///
+/// A boolean indicating whether the URL is valid or not.
+async fn is_valid_url(url: &str) -> bool {
+    let client = reqwest::Client::new();
+    match client.head(url).send().await {
+        Ok(response) => response.status().is_success(),
+        Err(_) => false,
     }
 }
 

@@ -108,7 +108,7 @@ async fn main() {
     };
 
     // Start crawling and get the stream of URLs
-    let mut stream = crawler::crawl_urls(url_receiver, filter);
+    let mut stream = crawler::crawl_urls(url_receiver, filter.clone());
 
     // Process the stream of URLs
     while let Some(url) = stream.next().await {
@@ -116,7 +116,7 @@ async fn main() {
         let url_for_task = url.clone();
 
         // wgetting
-        if args.wget {
+        if args.wget && filter(&url_for_task) {
             tokio::spawn(async move {
                 if let Err(err) = crawler::wget(&url_for_task).await {
                     eprintln!("Error wgetting: {}", err);
